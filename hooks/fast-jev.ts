@@ -199,12 +199,15 @@ export async function compactSession(
  * an agentic loop still in flight): stripping its handle orphans it from the
  * live turn the engine is mid-way through answering, and the engine has been
  * observed discarding that in-flight progress and re-deriving the reply from
- * the compacted history instead of continuing it (fast-jev-compaction#? ,
- * 2026-09-25 cleo-vps incident). Every earlier, settled message still loses
+ * the compacted history instead of continuing it (2026-09-25 cleo-vps
+ * incident). Every earlier, settled message still loses
  * its handle, so the #89 resume fix is unchanged.
  */
 export function withoutHandles(messages: readonly SessionMessage[]): SessionMessage[] {
   let cut = messages.length;
+  // A compaction can land after the assistant emits a tool call but before its
+  // result arrives: keep that pending assistant message with the in-flight turn.
+  if (cut > 0 && messages[cut - 1]!.role === 'assistant' && messages[cut - 1]!.toolUses.length > 0) cut--;
   while (cut > 0 && messages[cut - 1]!.role === 'user') cut--;
   return messages.map((message, index) =>
     index >= cut ? message : (({ handle: _handle, ...rest }) => rest)(message),

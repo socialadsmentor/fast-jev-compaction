@@ -154,4 +154,15 @@ describe('withoutHandles', () => {
     expect('handle' in out[2]!).toBe(false); // the assistant tool_use breaks the trailing user run
     expect((out[3] as { handle?: string }).handle).toBe('h3'); // the trailing tool_result: kept
   });
+
+  it('keeps the handle on a trailing assistant tool call whose result has not arrived yet', () => {
+    const out = withoutHandles([
+      { role: 'assistant', text: 'settled reply', toolUses: [], handle: 'h0' },
+      { role: 'user', text: 'the message that triggered this compaction', toolUses: [], handle: 'h1' },
+      { role: 'assistant', text: '', toolUses: [{ tool_use_id: 'u1', tool: 'Read', input: {} }], handle: 'h2' },
+    ] as never);
+    expect('handle' in out[0]!).toBe(false);
+    expect((out[1] as { handle?: string }).handle).toBe('h1');
+    expect((out[2] as { handle?: string }).handle).toBe('h2');
+  });
 });
