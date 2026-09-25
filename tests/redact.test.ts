@@ -121,13 +121,37 @@ describe('jevAsker', () => {
 });
 
 describe('withoutHandles', () => {
-  it('drops the engine handle and keeps content and tool pairs', () => {
+  it('drops the engine handle from settled history and keeps content and tool pairs', () => {
     const out = withoutHandles([
       { role: 'assistant', text: 'a', toolUses: [{ tool_use_id: 'u1', tool: 'Read', input: {} }], handle: 'h1' },
-      { role: 'user', text: '', toolUses: [], toolResults: [{ tool_use_id: 'u1', text: 'r', isError: false }], handle: 'h2' },
+      { role: 'assistant', text: 'b', toolUses: [], handle: 'h2' },
     ] as never);
     expect(out.every((m) => !('handle' in m))).toBe(true);
     expect(out[0]!.toolUses[0]!.tool_use_id).toBe('u1');
-    expect(out[1]!.toolResults![0]!.tool_use_id).toBe('u1');
+  });
+
+  it('keeps the handle on a bare trailing user message that has not been answered yet', () => {
+    const out = withoutHandles([
+      { role: 'assistant', text: 'settled reply', toolUses: [], handle: 'h1' },
+      { role: 'user', text: 'the message that triggered this compaction', toolUses: [], handle: 'h2' },
+    ] as never);
+    expect('handle' in out[0]!).toBe(false);
+    expect((out[1] as { handle?: string }).handle).toBe('h2');
+  });
+
+  it('keeps the handle on a trailing run of user messages, including an in-flight tool_result', () => {
+    // Mirrors a mid-agentic-loop compaction: the triggering user prompt, an
+    // assistant tool_use, and the tool_result are all still part of the
+    // unanswered turn (tool_results are role: 'user' per the Anthropic schema).
+    const out = withoutHandles([
+      { role: 'assistant', text: 'settled reply', toolUses: [], handle: 'h0' },
+      { role: 'user', text: 'the message that triggered this compaction', toolUses: [], handle: 'h1' },
+      { role: 'assistant', text: '', toolUses: [{ tool_use_id: 'u1', tool: 'Read', input: {} }], handle: 'h2' },
+      { role: 'user', text: '', toolUses: [], toolResults: [{ tool_use_id: 'u1', text: 'r', isError: false }], handle: 'h3' },
+    ] as never);
+    expect('handle' in out[0]!).toBe(false);
+    expect('handle' in out[1]!).toBe(false); // before the assistant tool_use in the run: settled, stripped
+    expect('handle' in out[2]!).toBe(false); // the assistant tool_use breaks the trailing user run
+    expect((out[3] as { handle?: string }).handle).toBe('h3'); // the trailing tool_result: kept
   });
 });
