@@ -1,4 +1,4 @@
-import type {
+﻿import type {
   On,
   PluginOptions,
   Register,
@@ -293,9 +293,13 @@ function notify(
     };
   },
   text: string,
+  agentId?: string,
+  isError = false,
 ): void {
-  $.ui.log(text);
-  $.ui.toast(text, { timeoutMs: 15_000 });
+  // Compactions stay in the background log; only an error the user must act on pops a toast (Sam, 2026-11-21).
+  const line = agentId ? `[subagent ${agentId}] ${text}` : text;
+  $.ui.log(line);
+  if (isError) $.ui.toast(`Fast Jev error: ${line}`, { timeoutMs: 15_000 });
 }
 
 export const register: Register = (on: On, options: PluginOptions) => {
@@ -303,6 +307,13 @@ export const register: Register = (on: On, options: PluginOptions) => {
   let compacting = false;
 
   on('session.compact', async ($, event, next) => {
+    // Subagents (200k window) take the built-in summary: Jev's verbatim keep left reviewers at ~123k of a
+    // ~167k limit after each compaction, so they re-compacted every few turns until the CLI killed them
+    // ("Autocompact is thrashing", 3 critics on 2026-11-21).
+    if (event.agentId) {
+      $.ui.log(`[subagent ${event.agentId}] built-in summary (Jev skipped for subagents)`);
+      return next(event);
+    }
     try {
       const config = { ...configured, apiKey: await getApiKey($, configured) };
       let redacted = 0;
@@ -323,18 +334,22 @@ export const register: Register = (on: On, options: PluginOptions) => {
         notify(
           $,
           `fallback to built-in summary (below ${percent(config.minReductionRatio)} minimum: ${summarize(result)})`,
+          event.agentId,
         );
         return next(event);
       }
       notify(
         $,
         `kept ${messages.length}/${event.messages.length} messages, no summary (${summarize(result)})`,
+        event.agentId,
       );
       return { messages: withoutHandles(messages) };
     } catch (error) {
       notify(
         $,
         `fallback to built-in summary (${error instanceof Error ? error.message : String(error)})`,
+        event.agentId,
+        true,
       );
       return next(event);
     }
